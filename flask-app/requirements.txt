@@ -1,0 +1,8 @@
+# Minimal CPU-only requirements for the Flask egg-counting API
+Flask>=2.3
+flask-cors>=3.0.10
+onnxruntime>=1.15.1
+numpy>=1.23
+Pillow>=9.4.0
+# Production WSGI server
+gunicorn>=20.1.0
