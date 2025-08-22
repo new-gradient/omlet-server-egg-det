@@ -163,26 +163,3 @@ docker rm -f egg-counter
 # Remove image
 docker rmi egg-counter-api
 ```
-
-## Technical Details
-- **Model**: RT-DETR (Real-Time DETR) for object detection
-- **Backend**: ONNXRuntime (CPU optimized)
-- **Server**: Gunicorn with 4 workers + 4 threads
-- **Base Image**: python:3.11-slim
-- **Security**: Runs as non-root user (`appuser`)
-
-## Troubleshooting
-
-### Common Issues
-1. **"Model not found"**: Ensure `models/rtdetr_eggs.onnx` exists in the build context
-2. **"File not found"**: Use volume mounts for local files or check file paths
-3. **Memory issues**: Increase Docker memory limits for large images
-4. **Permission denied**: Check file permissions on mounted volumes
-
-### Debug Mode
-```bash
-# Run with debug logs
-docker run -it --rm -p 5000:5000 \
-  -e DEBUG=true \
-  egg-counter-api
-```
