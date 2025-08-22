@@ -1,104 +1,164 @@
-# Egg Detection with RT-DETR v2
+# Flask Egg Counting API
 
-A computer vision system for detecting eggs using RT-DETR v2 (Real-Time DEtection TRansformer) with ResNet18 backbone.
+A production-ready Flask service that counts eggs using an RT-DETR ONNX model. The API detects eggs in images and returns count + bounding box coordinates.
 
-## Model Performance
-- **AP@0.5:0.95**: 77.4%
-- **AP@0.5**: 91.0% 
-- **Input Size**: 640x640 pixels
-- **Architecture**: RT-DETR v2 with ResNet18 backbone
+## Quick Start (Docker)
 
-## Quick Start
-
-### 1. Environment Setup
+### 1. Build the Docker Image
 ```bash
-python3 -m venv rtdetr_env
-source rtdetr_env/bin/activate
-pip install torch==2.0.1 torchvision==0.15.2 --index-url https://download.pytorch.org/whl/cu118
-pip install faster-coco-eval PyYAML tensorboard scipy pycocotools onnx onnxruntime-gpu onnxsim
+docker build -t egg-counter-api .
 ```
 
-### 2. Data Format
-Your dataset should follow YOLO format:
-```
-/your_dataset/
-images/           # .jpg/.png images
-labels/           # .txt files with format: class_id x_center y_center width height
-```
-
-Example label file (normalized coordinates 0-1):
-```
-0 0.409091 0.428962 0.207273 0.409836
-0 0.620000 0.390710 0.200000 0.409836
-```
-
-### 3. Dataset Preparation
-Convert YOLO format to COCO and create train/val split:
+### 2. Run the Container
 ```bash
-source rtdetr_env/bin/activate
-python prepare_dataset.py
-```
-This creates: `/active-1/Omlet_IP/coco_egg_dataset/`
-- `train/` - training images
-- `val/` - validation images  
-- `annotations/` - COCO format JSON files
+# Basic run (for URLs or images copied into container)
+docker run -d --name egg-counter -p 5000:5000 egg-counter-api
 
-### 4. Training
+# With volume mount for local images
+docker run -d --name egg-counter -p 5000:5000 \
+  -v /path/to/your/images:/test-images:ro \
+  egg-counter-api
+```
+
+### 3. Test the API
 ```bash
-cd RT-DETR/rtdetrv2_pytorch
-source ../../rtdetr_env/bin/activate
-python tools/train.py -c configs/rtdetrv2/egg_detection.yml -t ../../weights/rtdetrv2_r18vd_120e_coco_rerun_48.1.pth
+# Health check
+curl http://localhost:5000/health
+
+# Count eggs in an image
+curl -X POST http://localhost:5000/count_eggs \
+  -H 'Content-Type: application/json' \
+  -d '{"image_path":"/test-images/your-image.jpg"}'
+
+# Or use a URL
+curl -X POST http://localhost:5000/count_eggs \
+  -H 'Content-Type: application/json' \
+  -d '{"image_path":"https://example.com/eggs.jpg"}'
 ```
 
-Training outputs saved to: `outputs/egg_detection_training/`
-- `best.pth` - best performing model weights
-- `last.pth` - final epoch weights
-- `log.txt` - training metrics
+## API Endpoints
 
-### 5. ONNX Export
+### GET /health
+Returns API status.
+
+**Response:**
+```json
+{"status": "ok"}
+```
+
+### POST /count_eggs
+Detects and counts eggs in an image.
+
+**Request:**
+```json
+{
+  "image_path": "/path/to/image.jpg"  // Local path or HTTP/HTTPS URL
+}
+```
+
+**Response (Success):**
+```json
+{
+  "egg_count": 5,
+  "detections": [
+    {
+      "egg_id": 1,
+      "bounding_box": [681.08, 419.08, 818.73, 542.16],
+      "confidence": 0.962
+    },
+    {
+      "egg_id": 2,
+      "bounding_box": [412.46, 555.46, 531.22, 670.57],
+      "confidence": 0.960
+    }
+    // ... more detections
+  ]
+}
+```
+
+**Response (No Eggs):**
+```json
+{
+  "egg_count": 0,
+  "detections": [],
+  "info": "No eggs detected"
+}
+```
+
+**Response (Error):**
+```json
+{
+  "error": "Error message"
+}
+```
+
+## Important Notes
+
+### Image Processing
+- **Images are automatically resized to 640x640** for inference
+- **Bounding box coordinates are scaled back to original image dimensions**
+- Bounding boxes are in format: `[x1, y1, x2, y2]` (top-left, bottom-right corners)
+- Coordinates are in pixels relative to the original image size
+
+### File Access
+- For local images, use Docker volume mounts: `-v /host/path:/container/path:ro`
+- The API supports HTTP/HTTPS URLs and will download images automatically
+- Images are cached in `/app/downloads/` within the container
+
+### Configuration
+Set environment variables when running the container:
+
 ```bash
-cd RT-DETR/rtdetrv2_pytorch
-source ../../rtdetr_env/bin/activate
-python tools/export_onnx.py -c configs/rtdetrv2/egg_detection.yml -r ../../outputs/egg_detection_training/best.pth -o ../../egg_detection_model.onnx -s 640 --check --simplify
+docker run -d --name egg-counter -p 5000:5000 \
+  -e DETECTION_THRESHOLD=0.3 \
+  -e ENABLE_CORS=true \
+  -e DEBUG=false \
+  egg-counter-api
 ```
 
-Output: `egg_detection_model.onnx` (ready for deployment)
+**Environment Variables:**
+- `DETECTION_THRESHOLD`: Confidence threshold (default: 0.3)
+- `ENABLE_CORS`: Enable CORS for browser clients (default: true)
+- `DEBUG`: Enable Flask debug mode (default: false)
+- `DETECTION_ONNX_MODEL`: Path to ONNX model (default: `/app/models/rtdetr_eggs.onnx`)
 
-## Model Usage
+## Example Usage
 
-### ONNX Model Inputs/Outputs
-- **Input**: 
-  - `images`: (batch_size, 3, 640, 640) - RGB images
-  - `orig_target_sizes`: (batch_size, 2) - original image dimensions [height, width]
-- **Output**: 
-  - `labels`: detected class labels
-  - `boxes`: bounding box coordinates  
-  - `scores`: confidence scores
+### Test with Sample Images
+```bash
+# Start container with volume mount
+docker run -d --name egg-counter -p 5000:5000 \
+  -v /home/user/images:/test-images:ro \
+  egg-counter-api
 
-## Deployment
-
-A Flask application for model deployment is available at:
-```
-/flask-app/
-```
-
-This provides a REST API interface for the trained egg detection model.
-
-## Project Structure
-```
-omlet-server-egg-det/
-RT-DETR/                     # RT-DETR repository
-weights/                     # Pre-trained weights
-outputs/                     # Training outputs
-flask-app/                   # Deployment application
-prepare_dataset.py           # Dataset preparation script
-egg_detection_model.onnx     # Exported ONNX model
-RT-DETR/rtdetrv2_pytorch/configs/rtdetrv2/egg_detection.yml  # Training config
+# Test multiple images
+for img in eggs_1.jpg eggs_2.jpg no_eggs.jpg; do
+  echo "Testing $img:"
+  curl -s -X POST http://localhost:5000/count_eggs \
+    -H 'Content-Type: application/json' \
+    -d "{\"image_path\":\"/test-images/$img\"}" | \
+    python3 -m json.tool
+done
 ```
 
-## Requirements
-- CUDA 11.8+
-- Python 3.8+
-- PyTorch 2.0.1
-- 2x RTX 3090 (or similar GPU setup)
-- ~3GB disk space for dependencies
+### Production Deployment
+```bash
+# Run with resource limits and restart policy
+docker run -d --name egg-counter-prod \
+  -p 5000:5000 \
+  --restart=unless-stopped \
+  --memory=2g \
+  --cpus=2 \
+  -v /data/images:/images:ro \
+  -e DETECTION_THRESHOLD=0.4 \
+  egg-counter-api
+```
+
+## Cleanup
+```bash
+# Stop and remove container
+docker rm -f egg-counter
+
+# Remove image
+docker rmi egg-counter-api
+```
